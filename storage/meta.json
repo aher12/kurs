@@ -30,5 +30,13 @@
     "passwordHash" : "$2a$10$7eTe1.UbFkHLhPCYl/cET.PjZHyDc3flRks8cybGJ85CnqKvo97He",
     "uploadedBy" : "c3b17a1b-4656-40e3-a7d6-fb5e020a68ca",
     "uploadedAt" : "2026-05-23T14:27:06.068Z"
+  },
+  {
+    "id" : "8f6ee39f-5e18-400a-aaa7-ce0ca222c9ae",
+    "originalName" : "Коженков Кирилл БД 23-по-2 Лаб 7.docx",
+    "size" : 320437,
+    "passwordHash" : "$2a$10$HwDaqEmENRV8z.WoMe6BpuGc2gA7G4zokHJsO26TOlO16OPOCpweG",
+    "uploadedBy" : "a2698860-e2c2-40ac-92fd-b75eb5e90bac",
+    "uploadedAt" : "2026-05-24T12:31:08.185Z"
   }
 ]

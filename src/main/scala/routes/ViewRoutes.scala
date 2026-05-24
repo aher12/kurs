@@ -1,12 +1,13 @@
 package routes
 
 import cats.effect.IO
+import config.ServerConfig
 import org.http4s.*
 import org.http4s.dsl.io.*
 import org.http4s.implicits.uri
 import org.http4s.headers.Location
 
-class ViewRoutes:
+class ViewRoutes(cfg: ServerConfig):
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case GET -> Root / "login"    => html.loginPage(None)
@@ -17,4 +18,4 @@ class ViewRoutes:
 
   private def logout: IO[Response[IO]] =
     SeeOther(Location(uri"/login"))
-      .map(_.addCookie(ResponseCookie("jwt", "", path = Some("/"), maxAge = Some(0))))
+      .map(_.addCookie(ResponseCookie(cfg.cookieName, "", path = Some("/"), maxAge = Some(0))))

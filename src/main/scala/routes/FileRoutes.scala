@@ -1,6 +1,7 @@
 package routes
 
 import cats.effect.IO
+import config.ServerConfig
 import org.http4s.*
 import org.http4s.dsl.io.*
 import org.http4s.headers.*
@@ -12,7 +13,7 @@ import org.http4s.multipart.Multipart
 
 import java.util.UUID
 
-class FileRoutes(storage: FileStorage[IO], auth: Auth[IO]):
+class FileRoutes(storage: FileStorage[IO], auth: Auth[IO], cfg: ServerConfig):
 
   val routes: HttpRoutes[IO] = HttpRoutes.of[IO] {
     case req @ GET -> Root / "files"          => listFiles(req)
@@ -22,7 +23,7 @@ class FileRoutes(storage: FileStorage[IO], auth: Auth[IO]):
   }
 
   private def userIdFromCookie(req: Request[IO]): IO[Option[UUID]] =
-    req.cookies.find(_.name == "jwt") match
+    req.cookies.find(_.name == cfg.cookieName) match
       case None    => IO.pure(None)
       case Some(c) => auth.validateToken(c.content).map(_.map(_.id))
 
@@ -46,10 +47,10 @@ class FileRoutes(storage: FileStorage[IO], auth: Auth[IO]):
   private def downloadFile(req: Request[IO], id: String): IO[Response[IO]] =
     withAuth(req) { _ =>
       req.as[UrlForm].flatMap { form =>
-        val password = form.getFirstOrElse("password", "")
+        val password = form.getFirstOrElse(cfg.passwordFieldName, "")
         storage.get(UUID.fromString(id), password).flatMap {
           case Right((meta, stream)) =>
-            val disp = `Content-Disposition`("attachment", Map(CIString("filename") -> meta.originalName))
+            val disp = `Content-Disposition`("attachment", Map(CIString(cfg.defaultFileName) -> meta.originalName))
             Ok(stream)
               .map(_.withContentType(`Content-Type`(MediaType.application.`octet-stream`)).putHeaders(disp))
           case Left(AppError.FileNotFound)  => NotFound("File not found")
@@ -62,13 +63,12 @@ class FileRoutes(storage: FileStorage[IO], auth: Auth[IO]):
   private def uploadFile(req: Request[IO]): IO[Response[IO]] =
     withAuth(req) { userId =>
       req.as[Multipart[IO]].flatMap { multipart =>
-        val parts = multipart.parts
-        val filePart = parts.find(_.name == Some("file"))
-        val passwordPart = parts.find(_.name == Some("password"))
+        val filePart = multipart.parts.find(_.name == Some(cfg.fileFieldName))
+        val passwordPart = multipart.parts.find(_.name == Some(cfg.passwordFieldName))
 
         (filePart, passwordPart) match
           case (Some(file), Some(pass)) =>
-            val fileName = file.filename.getOrElse("unnamed")
+            val fileName = file.filename.getOrElse(cfg.defaultFileName)
             val password = pass.body.through(fs2.text.utf8.decode).compile.string
             password.flatMap { pwd =>
               storage.save(userId, fileName, pwd.trim, file.body).flatMap {

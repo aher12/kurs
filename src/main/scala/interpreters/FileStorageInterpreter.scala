@@ -2,6 +2,7 @@ package interpreters
 
 import cats.effect.IO
 import algebras.FileStorage
+import config.ServerConfig
 import domain.{FileMeta, AppError}
 import fs2.Stream
 import fs2.io.file.{Files => Fs2Files, Path => Fs2Path}
@@ -16,33 +17,34 @@ import io.circe.syntax.*
 import io.circe.parser.*
 import io.circe.generic.auto.*
 
-class FileStorageInterpreter(storageDir: String, metaFile: String) extends FileStorage[IO]:
+class FileStorageInterpreter(cfg: ServerConfig) extends FileStorage[IO]:
 
   private val meta: TrieMap[UUID, FileMeta] = loadMeta()
 
   private def loadMeta(): TrieMap[UUID, FileMeta] =
-    val path = JPaths.get(metaFile)
+    val path = JPaths.get(cfg.metaFile)
     if JFiles.exists(path) then
-      val json = Source.fromFile(metaFile).mkString
-      decode[List[FileMeta]](json).getOrElse(Nil)
-        .foldLeft(TrieMap.empty[UUID, FileMeta])((m, f) => m += (f.id -> f))
+      val json = Source.fromFile(cfg.metaFile).mkString
+      val list = decode[List[FileMeta]](json).getOrElse(Nil)
+      val pairs = list.map(f => f.id -> f)
+      TrieMap.from(pairs)
     else TrieMap.empty
 
   private def saveMeta(): Unit =
     val json = meta.values.toList.asJson.spaces2
-    val pw = PrintWriter(metaFile)
+    val pw = PrintWriter(cfg.metaFile)
     pw.write(json)
     pw.close()
 
   def save(userId: UUID, fileName: String, password: String, data: Stream[IO, Byte]): IO[Either[AppError, FileMeta]] =
     val id = UUID.randomUUID
-    val filePath = Fs2Path.fromNioPath(JPaths.get(storageDir, id.toString))
-    JFiles.createDirectories(JPaths.get(storageDir))
+    val filePath = Fs2Path.fromNioPath(JPaths.get(cfg.storageDir, id.toString))
+    JFiles.createDirectories(JPaths.get(cfg.storageDir))
     data.through(Fs2Files[IO].writeAll(filePath))
       .compile
       .toList
       .map { _ =>
-        val fileSize = JFiles.size(JPaths.get(storageDir, id.toString))
+        val fileSize = JFiles.size(JPaths.get(cfg.storageDir, id.toString))
         val fileMeta = FileMeta(
           id           = id,
           originalName = fileName,
@@ -62,7 +64,7 @@ class FileStorageInterpreter(storageDir: String, metaFile: String) extends FileS
       case Some(fileMeta) if !BCrypt.checkpw(password, fileMeta.passwordHash) =>
         Left(AppError.WrongPassword)
       case Some(fileMeta) =>
-        val path = Fs2Path.fromNioPath(JPaths.get(storageDir, id.toString))
+        val path = Fs2Path.fromNioPath(JPaths.get(cfg.storageDir, id.toString))
         val stream = Fs2Files[IO].readAll(path)
         Right((fileMeta, stream))
   }
@@ -76,6 +78,6 @@ class FileStorageInterpreter(storageDir: String, metaFile: String) extends FileS
       case Some(_) =>
         meta -= id
         saveMeta()
-        JFiles.deleteIfExists(JPaths.get(storageDir, id.toString))
+        JFiles.deleteIfExists(JPaths.get(cfg.storageDir, id.toString))
         Right(())
   }

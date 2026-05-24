@@ -17,16 +17,15 @@ object Main extends IOApp.Simple:
     val cfg = ServerConfig.default
     new File(cfg.storageDir).mkdirs()
 
-    val auth    = AuthInterpreter(cfg.usersFile, cfg.jwtSecret)
-    val storage = FileStorageInterpreter(cfg.storageDir, s"${cfg.storageDir}/meta.json")
+    val auth    = AuthInterpreter(cfg)
+    val storage = FileStorageInterpreter(cfg)
 
-    val viewRoutes  = ViewRoutes().routes
-    val authRoutes  = AuthRoutes(auth).routes
-    val fileRoutes  = FileRoutes(storage, auth).routes
+    val viewRoutes  = ViewRoutes(cfg).routes
+    val authRoutes  = AuthRoutes(auth, cfg).routes
+    val fileRoutes  = FileRoutes(storage, auth, cfg).routes
 
     val app = Logger.httpApp(true, true)(
-      (viewRoutes <+> authRoutes <+> fileRoutes).orNotFound
-    )
+      (viewRoutes <+> authRoutes <+> fileRoutes).orNotFound)
 
     EmberServerBuilder.default[IO]
       .withHost(Host.fromString(cfg.host).get)

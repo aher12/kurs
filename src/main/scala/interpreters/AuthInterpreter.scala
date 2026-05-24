@@ -2,6 +2,7 @@ package interpreters
 
 import cats.effect.IO
 import algebras.Auth
+import config.ServerConfig
 import domain.{User, LoginRequest, RegisterRequest, AppError}
 import pdi.jwt.{JwtCirce, JwtAlgorithm, JwtClaim}
 import io.circe.syntax.*
@@ -14,21 +15,22 @@ import scala.io.Source
 import java.io.PrintWriter
 import java.nio.file.{Files, Paths}
 
-class AuthInterpreter(usersFile: String, jwtSecret: String) extends Auth[IO]:
+class AuthInterpreter(cfg: ServerConfig) extends Auth[IO]:
 
   private val users: TrieMap[UUID, User] = loadUsers()
 
   private def loadUsers(): TrieMap[UUID, User] =
-    val path = Paths.get(usersFile)
+    val path = Paths.get(cfg.usersFile)
     if Files.exists(path) then
-      val json = Source.fromFile(usersFile).mkString
-      decode[List[User]](json).getOrElse(Nil)
-        .foldLeft(TrieMap.empty[UUID, User])((m, u) => m += (u.id -> u))
+      val json = Source.fromFile(cfg.usersFile).mkString
+      val list = decode[List[User]](json).getOrElse(Nil)
+      val pairs = list.map(u => u.id -> u)
+      TrieMap.from(pairs)
     else TrieMap.empty
 
   private def saveUsers(): Unit =
     val json = users.values.toList.asJson.spaces2
-    val pw = PrintWriter(usersFile)
+    val pw = PrintWriter(cfg.usersFile)
     pw.write(json)
     pw.close()
 
@@ -56,12 +58,12 @@ class AuthInterpreter(usersFile: String, jwtSecret: String) extends Auth[IO]:
           subject = Some(user.id.toString),
           content = user.asJson.noSpaces
         )
-        val token = JwtCirce.encode(claim, jwtSecret, JwtAlgorithm.HS256)
+        val token = JwtCirce.encode(claim, cfg.jwtSecret, JwtAlgorithm.HS256)
         Right(token)
   }
 
   def validateToken(token: String): IO[Option[User]] = IO {
-    JwtCirce.decode(token, jwtSecret, Seq(JwtAlgorithm.HS256)) match
+    JwtCirce.decode(token, cfg.jwtSecret, Seq(JwtAlgorithm.HS256)) match
       case util.Success(claim) => decode[User](claim.content).toOption
       case _ => None
   }
