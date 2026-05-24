@@ -7,7 +7,7 @@ import org.http4s.dsl.io.*
 import org.http4s.implicits.uri
 import org.http4s.headers.Location
 import algebras.Auth
-import domain.{LoginRequest, RegisterRequest}
+import domain.{LoginRequest, RegisterRequest, User, AppError}
 
 class AuthRoutes(auth: Auth[IO], cfg: ServerConfig):
 
@@ -17,27 +17,35 @@ class AuthRoutes(auth: Auth[IO], cfg: ServerConfig):
   }
 
   private def handleLogin(req: Request[IO]): IO[Response[IO]] =
-    req.as[UrlForm].flatMap { form =>
-      val loginReq = LoginRequest(
-        form.getFirstOrElse("login", ""),
-        form.getFirstOrElse(cfg.passwordFieldName, "")
-      )
-      auth.login(loginReq).flatMap {
-        case Left(error) => html.loginPage(Some(error.message))
-        case Right(token) =>
-          SeeOther(Location(uri"/files"))
-            .map(_.addCookie(ResponseCookie(cfg.cookieName, token, path = Some("/"))))
-      }
-    }
+    extractLogin(req).flatMap(auth.login).flatMap(loginResponse)
 
   private def handleRegister(req: Request[IO]): IO[Response[IO]] =
-    req.as[UrlForm].flatMap { form =>
-      val regReq = RegisterRequest(
+    extractRegister(req).flatMap(auth.register).flatMap(registerResponse)
+
+  private def extractLogin(req: Request[IO]): IO[LoginRequest] =
+    req.as[UrlForm].map { form =>
+      LoginRequest(
         form.getFirstOrElse("login", ""),
         form.getFirstOrElse(cfg.passwordFieldName, "")
       )
-      auth.register(regReq).flatMap {
-        case Left(error) => html.registerPage(Some(error.message))
-        case Right(_)    => SeeOther(Location(uri"/login"))
-      }
     }
+
+  private def extractRegister(req: Request[IO]): IO[RegisterRequest] =
+    req.as[UrlForm].map { form =>
+      RegisterRequest(
+        form.getFirstOrElse("login", ""),
+        form.getFirstOrElse(cfg.passwordFieldName, "")
+      )
+    }
+
+  private def loginResponse(result: Either[AppError, String]): IO[Response[IO]] =
+    result match
+      case Left(error) => html.loginPage(Some(error.message))
+      case Right(token) =>
+        SeeOther(Location(uri"/files"))
+          .map(_.addCookie(ResponseCookie(cfg.cookieName, token, path = Some("/"))))
+
+  private def registerResponse(result: Either[AppError, User]): IO[Response[IO]] =
+    result match
+      case Left(error) => html.registerPage(Some(error.message))
+      case Right(_)    => SeeOther(Location(uri"/login"))

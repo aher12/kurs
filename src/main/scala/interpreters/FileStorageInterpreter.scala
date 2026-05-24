@@ -43,20 +43,21 @@ class FileStorageInterpreter(cfg: ServerConfig) extends FileStorage[IO]:
     data.through(Fs2Files[IO].writeAll(filePath))
       .compile
       .toList
-      .map { _ =>
-        val fileSize = JFiles.size(JPaths.get(cfg.storageDir, id.toString))
-        val fileMeta = FileMeta(
-          id           = id,
-          originalName = fileName,
-          size         = fileSize,
-          passwordHash = BCrypt.hashpw(password, BCrypt.gensalt()),
-          uploadedBy   = userId,
-          uploadedAt   = Instant.now
-        )
-        meta += (id -> fileMeta)
-        saveMeta()
-        Right(fileMeta)
-      }
+      .map(_ => Right(createMeta(id, fileName, password, userId)))
+
+  private def createMeta(id: UUID, fileName: String, password: String, userId: UUID): FileMeta =
+    val fileSize = JFiles.size(JPaths.get(cfg.storageDir, id.toString))
+    val fileMeta = FileMeta(
+      id           = id,
+      originalName = fileName,
+      size         = fileSize,
+      passwordHash = BCrypt.hashpw(password, BCrypt.gensalt()),
+      uploadedBy   = userId,
+      uploadedAt   = Instant.now
+    )
+    meta += (id -> fileMeta)
+    saveMeta()
+    fileMeta
 
   def get(id: UUID, password: String): IO[Either[AppError, (FileMeta, Stream[IO, Byte])]] = IO {
     meta.get(id) match

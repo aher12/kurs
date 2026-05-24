@@ -37,33 +37,38 @@ class AuthInterpreter(cfg: ServerConfig) extends Auth[IO]:
   def register(req: RegisterRequest): IO[Either[AppError, User]] = IO {
     users.values.find(_.login == req.login) match
       case Some(_) => Left(AppError.UserAlreadyExists)
-      case None =>
-        val user = User(
-          id       = UUID.randomUUID,
-          login    = req.login,
-          password = BCrypt.hashpw(req.password, BCrypt.gensalt())
-        )
-        users += (user.id -> user)
-        saveUsers()
-        Right(user)
+      case None    => Right(createUser(req.login, req.password))
   }
 
   def login(req: LoginRequest): IO[Either[AppError, String]] = IO {
     users.values.find(_.login == req.login) match
-      case None => Left(AppError.InvalidCredentials)
-      case Some(user) if !BCrypt.checkpw(req.password, user.password) =>
-        Left(AppError.InvalidCredentials)
-      case Some(user) =>
-        val claim = JwtClaim(
-          subject = Some(user.id.toString),
-          content = user.asJson.noSpaces
-        )
-        val token = JwtCirce.encode(claim, cfg.jwtSecret, JwtAlgorithm.HS256)
-        Right(token)
+      case None                       => Left(AppError.InvalidCredentials)
+      case Some(u) if !checkPw(req, u) => Left(AppError.InvalidCredentials)
+      case Some(u)                    => Right(encodeToken(u))
   }
 
   def validateToken(token: String): IO[Option[User]] = IO {
     JwtCirce.decode(token, cfg.jwtSecret, Seq(JwtAlgorithm.HS256)) match
       case util.Success(claim) => decode[User](claim.content).toOption
-      case _ => None
+      case _                   => None
   }
+
+  private def createUser(login: String, password: String): User =
+    val user = User(
+      id       = UUID.randomUUID,
+      login    = login,
+      password = BCrypt.hashpw(password, BCrypt.gensalt())
+    )
+    users += (user.id -> user)
+    saveUsers()
+    user
+
+  private def checkPw(req: LoginRequest, user: User): Boolean =
+    BCrypt.checkpw(req.password, user.password)
+
+  private def encodeToken(user: User): String =
+    val claim = JwtClaim(
+      subject = Some(user.id.toString),
+      content = user.asJson.noSpaces
+    )
+    JwtCirce.encode(claim, cfg.jwtSecret, JwtAlgorithm.HS256)
